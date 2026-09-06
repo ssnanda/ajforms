@@ -13,3 +13,31 @@ function ajcore_get_reviews_display_settings() {
 	$data = (array) get_option( 'ajcore_reviews_display', array() );
 	return array( 'fallback' => sanitize_text_field( $data['fallback'] ?? '' ), 'order' => ( $data['order'] ?? '' ) === 'date' ? 'date' : 'manual' );
 }
+
+/** Business-authored navigation settings, independent of review selection and rating. */
+function ajcore_sanitize_review_prompt_settings( $input ) {
+	$input = is_array( $input ) ? $input : array();
+	$data = array( 'prompt_enabled' => ! empty( $input['prompt_enabled'] ) );
+	foreach ( array( 'prompt_label', 'feedback_url', 'google_review_url' ) as $key ) {
+		$value = isset( $input[$key] ) && is_string( $input[$key] ) ? $input[$key] : '';
+		$data[$key] = $key === 'prompt_label' ? sanitize_text_field( $value ) : esc_url_raw( $value, array( 'https' ) );
+		if ( $key !== 'prompt_label' && ( wp_parse_url( $data[$key], PHP_URL_SCHEME ) !== 'https' || ! wp_parse_url( $data[$key], PHP_URL_HOST ) || wp_parse_url( $data[$key], PHP_URL_USER ) || wp_parse_url( $data[$key], PHP_URL_PASS ) ) ) { $data[$key] = ''; }
+	}
+	return $data;
+}
+
+/** Both destinations are identical for every rating. Never fetch Google while rendering. */
+function ajcore_get_review_prompt_settings() {
+	$data = ajcore_sanitize_review_prompt_settings( get_option( 'ajcore_reviews_display', array() ) );
+	$summary = $data['google_review_url'] === '' && $data['prompt_enabled'] ? ajcore_get_google_location_summary() : array();
+	$google_url = $data['google_review_url'] ?: ( $summary['write_url'] ?? '' );
+	return array(
+		'enabled' => $data['prompt_enabled'],
+		'available' => $data['feedback_url'] !== '' && $google_url !== '',
+		'label' => $data['prompt_label'] ?: __( 'Rate Us', 'ajcore' ),
+		'feedback_url' => $data['feedback_url'],
+		'google_review_url' => $google_url,
+		// A provider-supplied URL inherits the snapshot's expiry; manually configured URLs do not.
+		'expires_at' => $summary ? (int) ajcore_get_reviews_status()['expires_at'] : 0,
+	);
+}

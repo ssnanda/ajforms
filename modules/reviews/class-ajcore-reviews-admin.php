@@ -78,7 +78,10 @@ final class AJCore_Reviews_Admin {
 				case 'feature':
 					return AJCore_Reviews::set_featured( self::value( 'key' ), self::value( 'featured' ) === '1', (int) self::value( 'order' ) );
 				case 'display':
-					update_option( 'ajcore_reviews_display', array( 'fallback' => sanitize_text_field( self::value( 'fallback' ) ), 'order' => self::value( 'order' ) === 'date' ? 'date' : 'manual' ), false ); return true;
+					$display = array( 'fallback' => sanitize_text_field( self::value( 'fallback' ) ), 'order' => self::value( 'order' ) === 'date' ? 'date' : 'manual' );
+					$prompt = ajcore_sanitize_review_prompt_settings( array( 'prompt_enabled' => self::value( 'prompt_enabled' ) === '1', 'prompt_label' => self::value( 'prompt_label' ), 'feedback_url' => self::value( 'feedback_url' ), 'google_review_url' => self::value( 'google_review_url' ) ) );
+					update_option( 'ajcore_reviews_display', array_merge( $display, $prompt ), false );
+					do_action( 'ajcore_reviews_content_changed' ); return true;
 			}
 			return new WP_Error( 'operation_failed' );
 		} );
@@ -137,6 +140,13 @@ final class AJCore_Reviews_Admin {
 		if ( $tab === 'display' ) {
 			$data = ajcore_get_reviews_display_settings(); self::form( 'display' );
 			echo '<p><label>' . esc_html__( 'Frontend fallback (empty by default)', 'ajcore' ) . '<br><input class="large-text" name="fallback" value="' . esc_attr( $data['fallback'] ) . '"></label></p><p><label>' . esc_html__( 'Default featured ordering', 'ajcore' ) . ' <select name="order"><option value="manual" ' . selected( $data['order'], 'manual', false ) . '>' . esc_html__( 'Business display order', 'ajcore' ) . '</option><option value="date" ' . selected( $data['order'], 'date', false ) . '>' . esc_html__( 'Publication date, newest first', 'ajcore' ) . '</option></select></label></p>';
+			$prompt = ajcore_sanitize_review_prompt_settings( get_option( 'ajcore_reviews_display', array() ) );
+			echo '<h3>' . esc_html__( 'Rate Us header prompt', 'ajcore' ) . '</h3><p>' . esc_html__( 'Every star offers the same two choices: private feedback and a Google review. A selected rating is not submitted to either destination. Feedback is not automatically published as a testimonial.', 'ajcore' ) . '</p>';
+			echo '<p><label><input type="checkbox" name="prompt_enabled" value="1" ' . checked( $prompt['prompt_enabled'], true, false ) . '> ' . esc_html__( 'Enable the Rate Us header prompt', 'ajcore' ) . '</label></p>';
+			foreach ( array( 'prompt_label' => __( 'Prompt label (defaults to Rate Us)', 'ajcore' ), 'feedback_url' => __( 'Private feedback page URL (HTTPS)', 'ajcore' ), 'google_review_url' => __( 'Google Write a Review URL (HTTPS; optional override)', 'ajcore' ) ) as $key => $label ) {
+				echo '<p><label>' . esc_html( $label ) . '<br><input class="large-text" type="' . ( $key === 'prompt_label' ? 'text' : 'url' ) . '" name="' . esc_attr( $key ) . '" value="' . esc_attr( $prompt[$key] ) . '"></label></p>';
+			}
+			echo '<p>' . esc_html__( 'Without a Google URL override, the current synchronized location supplies its Write a Review link. The prompt stays hidden unless both destinations are available. AJNanda displays it automatically; other themes must use the documented PHP integration. These links do not create or connect a submission form.', 'ajcore' ) . '</p>';
 			submit_button(); echo '</form>';
 		}
 		if ( $tab === 'history' ) {

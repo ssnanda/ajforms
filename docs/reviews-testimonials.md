@@ -171,3 +171,37 @@ Google rules, response shapes, approval requirements, and API behavior can chang
 - No frontend cards: connect/sync/feature Google reviews, or publish and feature manual testimonials. Expired, draft, unfeatured, and malformed records never display.
 
 See the [verification report](reviews-implementation-report.md) for exact manual commands, scope, and results. No live API credentials are needed by automated tests; all HTTP is blocked or mocked. Do not run the PHPUnit suite against a production WordPress database.
+
+## Rating-neutral Rate Us prompt
+
+Display Settings also includes **Enable the Rate Us header prompt**, its label,
+a private-feedback HTTPS URL, and an optional Google Write a Review HTTPS URL.
+The default is disabled. Enter the URL of an existing feedback form; this feature
+links to that form and does not create it, ingest its submissions, or publish them
+as testimonials. Any later publication requires permission and administrator review.
+
+All five ratings expose the same private-feedback and Google-review destinations.
+There are no low/high rating thresholds, hidden Google choices, automatic
+redirects, or rating-dependent URLs. Clicking a star only changes the explanation;
+it does not submit, track, or prefill a rating on Google or the feedback form.
+
+`ajcore_get_review_prompt_settings()` is the public interface for AJNanda or another
+theme. It returns `enabled`, `available`, `label`, `feedback_url`,
+`google_review_url`, and `expires_at`. Both URLs must be available to display the
+prompt. Invalid/non-HTTPS URLs and URLs containing username/password credentials
+are rejected. The existing administrator capability, POST nonce, and shared lock
+protect saving. The values extend the existing `ajcore_reviews_display` option;
+there is no migration or new table. The content-changed hook fires on save so a
+site's cache integration can purge old navigation.
+
+The optional Google URL is an administrator-managed navigation link, independent
+of connection state. Without that override, the interface uses only the valid
+synchronized location's `write_url`, with its snapshot expiry in `expires_at`.
+It never calls Google while rendering. If that snapshot expires and no override
+exists, the prompt becomes unavailable rather than showing only private feedback.
+AJNanda supplies cache-bypass headers and open-page expiry removal for this case.
+
+A manually configured feedback URL and Google URL keep the invitation usable
+without OAuth; they do not connect a Google account or synchronize any reviews.
+Configure real site URLs through administration, not in the reusable repositories.
+For a non-AJNanda theme, see the integration example in AJNanda's review guide.
