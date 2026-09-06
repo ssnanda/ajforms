@@ -28633,10 +28633,11 @@ class AJForms_Admin {
 
 	/**
 	 * Saves the "Live Chat" CP Settings section — deliberately NOT routed through the generic
-	 * handle_settings_save()/master-only-guard pattern the other sections use, because this section
-	 * mixes a shared field (chat_server_url/chat_notify_secret, master-only) with a genuinely
-	 * per-site field (chat_widget_enabled) that every connected site must be able to toggle
-	 * independently for the staged widget rollout.
+	 * handle_settings_save() the other sections use (that one doesn't know the chat_* fields), but
+	 * every field here is master-only in shared-DB mode: the whole Live Chat config — server URL,
+	 * secrets, business hours, transcript copy, AND the widget enable / engagement toggles — is one
+	 * shared, network-wide configuration (see ajcore_get_chat_setting_keys()). Secondary sites
+	 * render this section read-only and their POST is ignored below.
 	 */
 	private function handle_chat_settings_save() {
 		if ( ! current_user_can( 'manage_options' ) || ! isset( $_POST['ajforms_settings_nonce'] ) ) {
@@ -28648,17 +28649,14 @@ class AJForms_Admin {
 		$is_shared_db = function_exists( 'ajcore_is_shared_db_enabled' ) && ajcore_is_shared_db_enabled();
 		$is_master    = ! function_exists( 'ajcore_is_stripe_sync_owner' ) || ajcore_is_stripe_sync_owner();
 
-		$settings['chat_widget_enabled'] = isset( $_POST['chat_widget_enabled'] ) ? '1' : '0';
-		// All five below are local per-site, same as chat_widget_enabled just above — never gated by
-		// $is_shared_db/$is_master, so they stay editable here regardless of which site owns the
-		// shared secrets.
-		$settings['chat_engage_popup_enabled']      = isset( $_POST['chat_engage_popup_enabled'] ) ? '1' : '0';
-		$settings['chat_engage_popup_delay_seconds'] = isset( $_POST['chat_engage_popup_delay_seconds'] ) ? max( 0, absint( $_POST['chat_engage_popup_delay_seconds'] ) ) : 25;
-		$settings['visitor_identify_enabled']       = isset( $_POST['visitor_identify_enabled'] ) ? '1' : '0';
-		$settings['visitor_identify_delay_seconds'] = isset( $_POST['visitor_identify_delay_seconds'] ) ? max( 0, absint( $_POST['visitor_identify_delay_seconds'] ) ) : 55;
-		$settings['visitor_timer_enabled']          = isset( $_POST['visitor_timer_enabled'] ) ? '1' : '0';
-
 		if ( ! $is_shared_db || $is_master ) {
+			$settings['chat_widget_enabled']            = isset( $_POST['chat_widget_enabled'] ) ? '1' : '0';
+			$settings['chat_engage_popup_enabled']      = isset( $_POST['chat_engage_popup_enabled'] ) ? '1' : '0';
+			$settings['chat_engage_popup_delay_seconds'] = isset( $_POST['chat_engage_popup_delay_seconds'] ) ? max( 0, absint( $_POST['chat_engage_popup_delay_seconds'] ) ) : 25;
+			$settings['visitor_identify_enabled']       = isset( $_POST['visitor_identify_enabled'] ) ? '1' : '0';
+			$settings['visitor_identify_delay_seconds'] = isset( $_POST['visitor_identify_delay_seconds'] ) ? max( 0, absint( $_POST['visitor_identify_delay_seconds'] ) ) : 55;
+			$settings['visitor_timer_enabled']          = isset( $_POST['visitor_timer_enabled'] ) ? '1' : '0';
+
 			$settings['chat_server_url'] = isset( $_POST['chat_server_url'] ) ? esc_url_raw( trim( wp_unslash( $_POST['chat_server_url'] ) ) ) : '';
 			$settings['chat_notify_url'] = isset( $_POST['chat_notify_url'] ) ? esc_url_raw( trim( wp_unslash( $_POST['chat_notify_url'] ) ) ) : '';
 			if ( isset( $_POST['chat_notify_secret'] ) && '' !== trim( wp_unslash( $_POST['chat_notify_secret'] ) ) ) {
@@ -28691,10 +28689,10 @@ class AJForms_Admin {
 	}
 
 	/**
-	 * "Live Chat" settings for the self-hosted chat system: the AJOps chat server URL + notify
-	 * secret are shared across every connected site (master-only, same pattern as the old Tawk
-	 * settings), while "Enable chat widget on this site" is intentionally local so the widget can be
-	 * rolled out to individual sites one at a time (see handle_chat_settings_save() above).
+	 * "Live Chat" settings for the self-hosted chat system. Every field here — server URL, secrets,
+	 * the widget enable/engagement toggles, business hours, transcript copy — is one shared,
+	 * network-wide configuration (master-only in shared-DB mode; see handle_chat_settings_save()).
+	 * Secondary sites render everything read-only.
 	 */
 	public function display_chat_settings_section() {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -28735,7 +28733,7 @@ class AJForms_Admin {
 				<?php
 				printf(
 					/* translators: %s: Live Chat tab link */
-					esc_html__( 'Visitor chats from your sites, answered in real time from AJOps or the %s tab here — no third-party dashboard. Enable the widget below per site.', 'ajforms' ),
+					esc_html__( 'Visitor chats from your sites, answered in real time from AJOps or the %s tab here — no third-party dashboard. One shared configuration for every connected site.', 'ajforms' ),
 					'<a href="' . esc_url( $live_chat_tab_url ) . '">' . esc_html__( 'Live Chat', 'ajforms' ) . '</a>'
 				);
 				?>
@@ -28749,7 +28747,7 @@ class AJForms_Admin {
 			<?php endif; ?>
 
 			<?php if ( $read_only ) : ?>
-				<div class="notice notice-info inline"><p><?php esc_html_e( 'The chat server URL and notify secret are a single shared configuration, managed on the master AJ Core site. The widget enable toggle below is specific to this site and always editable here.', 'ajforms' ); ?></p></div>
+				<div class="notice notice-info inline"><p><?php esc_html_e( 'Live Chat is a single shared configuration for the whole connected-site network — including whether the widget is enabled — managed on the master AJ Core site. These settings are read-only here.', 'ajforms' ); ?></p></div>
 			<?php endif; ?>
 
 			<form method="post" action="<?php echo esc_url( $action_url ); ?>">
@@ -28758,10 +28756,10 @@ class AJForms_Admin {
 
 				<div class="ajforms-settings-field" style="margin-bottom:16px;">
 					<label style="display:flex;align-items:center;gap:8px;font-weight:600;">
-						<input type="checkbox" name="chat_widget_enabled" value="1" <?php checked( '1', $settings['chat_widget_enabled'] ); ?>>
-						<?php esc_html_e( 'Enable chat widget on this site', 'ajforms' ); ?>
+						<input type="checkbox" name="chat_widget_enabled" value="1" <?php checked( '1', $settings['chat_widget_enabled'] ); ?> <?php disabled( $read_only ); ?>>
+						<?php esc_html_e( 'Enable chat widget across the connected-site network', 'ajforms' ); ?>
 					</label>
-					<div class="ajforms-settings-help"><?php esc_html_e( 'Shows the floating chat bubble to visitors on this WordPress site. Turn on one site at a time as you roll it out.', 'ajforms' ); ?></div>
+					<div class="ajforms-settings-help"><?php esc_html_e( 'Shows the floating chat bubble to visitors on every connected site. This is a network-wide switch, set on the master.', 'ajforms' ); ?></div>
 				</div>
 
 				<div class="ajforms-settings-grid">
@@ -28838,28 +28836,28 @@ class AJForms_Admin {
 				<p style="margin:0 0 16px;color:#6b7280;font-size:13px;max-width:680px;"><?php esc_html_e( 'The passive "want to text us?" nudge — a small dismissible corner popup offering a one-tap text-us link to a visitor who\'s been on the page a while.', 'ajforms' ); ?></p>
 				<div class="ajforms-settings-field" style="margin-bottom:16px;">
 					<label style="display:flex;align-items:center;gap:8px;font-weight:600;">
-						<input type="checkbox" name="chat_engage_popup_enabled" value="1" <?php checked( '1', $settings['chat_engage_popup_enabled'] ?? '1' ); ?>>
-						<?php esc_html_e( 'Show the "want to text us?" popup on this site', 'ajforms' ); ?>
+						<input type="checkbox" name="chat_engage_popup_enabled" value="1" <?php checked( '1', $settings['chat_engage_popup_enabled'] ?? '1' ); ?> <?php disabled( $read_only ); ?>>
+						<?php esc_html_e( 'Show the "want to text us?" popup across the connected-site network', 'ajforms' ); ?>
 					</label>
 					<div class="ajforms-settings-help"><?php esc_html_e( 'On by default.', 'ajforms' ); ?></div>
 				</div>
 				<div class="ajforms-settings-field" style="max-width:200px;margin-bottom:16px;">
 					<label for="chat_engage_popup_delay_seconds"><?php esc_html_e( 'Delay before showing (seconds)', 'ajforms' ); ?></label>
-					<input type="number" min="0" name="chat_engage_popup_delay_seconds" id="chat_engage_popup_delay_seconds" value="<?php echo esc_attr( $settings['chat_engage_popup_delay_seconds'] ?? '25' ); ?>">
+					<input type="number" min="0" name="chat_engage_popup_delay_seconds" id="chat_engage_popup_delay_seconds" value="<?php echo esc_attr( $settings['chat_engage_popup_delay_seconds'] ?? '25' ); ?>" <?php disabled( $read_only ); ?>>
 				</div>
 
 				<h3 style="margin:24px 0 4px;"><?php esc_html_e( 'Live Visitors', 'ajforms' ); ?></h3>
-				<p style="margin:0 0 16px;color:#6b7280;font-size:13px;max-width:680px;"><?php esc_html_e( 'A small, dismissible prompt inviting a visitor to leave their name, email, and/or phone number so staff can follow up later — shown even if they never open the chat panel. Every field is optional for the visitor; submitting creates a Lead here (source "Live Visitor") auto-linked to that visitor\'s history. Requires the chat widget enabled above, since the prompt rides its existing connection.', 'ajforms' ); ?></p>
+				<p style="margin:0 0 16px;color:#6b7280;font-size:13px;max-width:680px;"><?php esc_html_e( 'A small, dismissible prompt inviting a visitor to leave their name, email, and/or phone number so staff can follow up later — shown even if they never open the chat panel. Every field is optional for the visitor; submitting creates a Lead (source "Live Visitor") auto-linked to that visitor\'s history. Requires the chat widget enabled above, since the prompt rides its existing connection.', 'ajforms' ); ?></p>
 				<div class="ajforms-settings-field" style="margin-bottom:16px;">
 					<label style="display:flex;align-items:center;gap:8px;font-weight:600;">
-						<input type="checkbox" name="visitor_identify_enabled" value="1" <?php checked( '1', $settings['visitor_identify_enabled'] ?? '0' ); ?>>
-						<?php esc_html_e( 'Ask visitors to leave their name, email, and/or phone on this site', 'ajforms' ); ?>
+						<input type="checkbox" name="visitor_identify_enabled" value="1" <?php checked( '1', $settings['visitor_identify_enabled'] ?? '0' ); ?> <?php disabled( $read_only ); ?>>
+						<?php esc_html_e( 'Ask visitors to leave their name, email, and/or phone (network-wide)', 'ajforms' ); ?>
 					</label>
-					<div class="ajforms-settings-help"><?php esc_html_e( 'Off by default. Turn on per site as you roll it out.', 'ajforms' ); ?></div>
+					<div class="ajforms-settings-help"><?php esc_html_e( 'Off by default.', 'ajforms' ); ?></div>
 				</div>
 				<div class="ajforms-settings-field" style="max-width:200px;margin-bottom:16px;">
 					<label for="visitor_identify_delay_seconds"><?php esc_html_e( 'Delay before showing (seconds)', 'ajforms' ); ?></label>
-					<input type="number" min="0" name="visitor_identify_delay_seconds" id="visitor_identify_delay_seconds" value="<?php echo esc_attr( $settings['visitor_identify_delay_seconds'] ?? '55' ); ?>">
+					<input type="number" min="0" name="visitor_identify_delay_seconds" id="visitor_identify_delay_seconds" value="<?php echo esc_attr( $settings['visitor_identify_delay_seconds'] ?? '55' ); ?>" <?php disabled( $read_only ); ?>>
 					<div class="ajforms-settings-help"><?php esc_html_e( 'The widget waits for the Engagement Popup above to be off-screen before showing this one, so any delay combination is safe.', 'ajforms' ); ?></div>
 				</div>
 
@@ -28867,10 +28865,10 @@ class AJForms_Admin {
 				<p style="margin:0 0 16px;color:#6b7280;font-size:13px;max-width:680px;"><?php esc_html_e( 'A tiny, unlabeled number in a page corner showing cumulative seconds on this site across every visit, not just this one — ticks up live. Deliberately understated (small, muted, no card or label), there for a visitor who happens to notice it, not a headline feature. Requires the chat widget enabled above, since the number rides its existing connection.', 'ajforms' ); ?></p>
 				<div class="ajforms-settings-field" style="margin-bottom:16px;">
 					<label style="display:flex;align-items:center;gap:8px;font-weight:600;">
-						<input type="checkbox" name="visitor_timer_enabled" value="1" <?php checked( '1', $settings['visitor_timer_enabled'] ?? '0' ); ?>>
-						<?php esc_html_e( 'Show a cumulative visit timer to visitors on this site', 'ajforms' ); ?>
+						<input type="checkbox" name="visitor_timer_enabled" value="1" <?php checked( '1', $settings['visitor_timer_enabled'] ?? '0' ); ?> <?php disabled( $read_only ); ?>>
+						<?php esc_html_e( 'Show a cumulative visit timer to visitors (network-wide)', 'ajforms' ); ?>
 					</label>
-					<div class="ajforms-settings-help"><?php esc_html_e( 'Off by default. Turn on per site as you roll it out.', 'ajforms' ); ?></div>
+					<div class="ajforms-settings-help"><?php esc_html_e( 'Off by default.', 'ajforms' ); ?></div>
 				</div>
 
 				<h3 style="margin:24px 0 4px;"><?php esc_html_e( 'Business hours', 'ajforms' ); ?></h3>
@@ -28912,9 +28910,11 @@ class AJForms_Admin {
 					<div class="ajforms-settings-help"><?php esc_html_e( 'Placeholder: {name}. The full message transcript is appended automatically below this text.', 'ajforms' ); ?></div>
 				</div>
 
-				<p style="margin-top:20px;">
-					<button type="submit" class="button button-primary"><?php esc_html_e( 'Save Settings', 'ajforms' ); ?></button>
-				</p>
+				<?php if ( ! $read_only ) : ?>
+					<p style="margin-top:20px;">
+						<button type="submit" class="button button-primary"><?php esc_html_e( 'Save Settings', 'ajforms' ); ?></button>
+					</p>
+				<?php endif; ?>
 			</form>
 		</div>
 		<?php

@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<phpunit bootstrap="tests/reviews/bootstrap.php" colors="true">
+  <testsuites><testsuite name="AJ Core Reviews"><file>tests/reviews/test-reviews.php</file></testsuite></testsuites>
+</phpunit>

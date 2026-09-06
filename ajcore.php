@@ -3,7 +3,7 @@
  * Plugin Name:       AJ Core
  * Plugin URI:        https://github.com/ssnanda/ajcore
  * Description:       A modular WordPress business toolkit for forms, payments, portals, auth, CRM, and automations.
- * Version: 0.7.284
+ * Version: 0.7.285
  * Author:            IT Spector LLC
  * Author URI:        https://itspector.com
  * Update URI:        false
@@ -18,7 +18,7 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 if ( ! defined( 'AJCORE_VERSION' ) ) {
-	define( 'AJCORE_VERSION', '0.7.284' );
+	define( 'AJCORE_VERSION', '0.7.285' );
 }
 
 if ( ! defined( 'AJCORE_PLUGIN_DIR' ) ) {
@@ -315,12 +315,12 @@ if ( ! function_exists( 'ajforms_get_settings_defaults' ) ) {
 			// E-Signatures (BreezeDoc). A single shared BreezeDoc account, authenticated with a
 			// Personal Access Token, used to send templates out for customer signature.
 			'breezedoc_api_token'           => '',
-			// Self-hosted Live Chat. chat_server_url/chat_notify_secret are shared across every
-			// connected site (master-controlled, same as the settings above) — they point every
-			// site's widget/reply actions at the one AJOps chat server and let it verify the
-			// /chat/notify webhook AJCore fires after every write. chat_widget_enabled is
-			// deliberately LOCAL (per-site, never pushed to the shared DB) so the widget can be
-			// rolled out to individual sites one at a time.
+			// Self-hosted Live Chat. Every chat_* / visitor_* key below is shared across all
+			// connected sites and master-controlled (see ajcore_get_chat_setting_keys() — the whole
+			// list rides the 'ajcore_chat_settings' shared row) — the master's Live Chat settings
+			// page is the one place they're editable, secondary sites overlay them read-only in
+			// ajforms_get_settings(). chat_widget_enabled included: turning the widget on for the
+			// master turns it on network-wide.
 			'chat_server_url'               => '',
 			// Optional override of chat_server_url for AJCore's own outbound /chat/notify call
 			// only (never sent to the browser). In production these are identical and this stays
@@ -338,17 +338,17 @@ if ( ! function_exists( 'ajforms_get_settings_defaults' ) ) {
 			'chat_engage_popup_delay_seconds' => '25',
 			// "Live Visitors" self-identify prompt — a light, dismissible ask (name/email/phone, all
 			// optional) shown from the chat widget's presence connection, independent of whether the
-			// visitor ever opens the chat panel. Deliberately LOCAL per-site, same reasoning as
-			// chat_widget_enabled just above, and only has any effect where that's also on (the prompt
-			// rides the widget's existing presence WebSocket — see ajcore-chat-widget.js).
+			// visitor ever opens the chat panel. Shared/master-controlled like chat_widget_enabled
+			// above, and only has any effect where that's also on (the prompt rides the widget's
+			// existing presence WebSocket — see ajcore-chat-widget.js).
 			'visitor_identify_enabled'      => '0',
 			// No fixed-collision floor needed against the engage popup's delay/auto-dismiss window —
 			// the widget retries until the engage popup (if any) is off-screen rather than a one-shot
 			// check, so any combination of the two delays below is safe.
 			'visitor_identify_delay_seconds' => '55',
 			// Visitor-facing "visit timer" — a tiny, unlabeled, barely-there number (cumulative
-			// seconds on site across every visit, not just this one) shown in a page corner. Same
-			// per-site/local reasoning as the settings above; also only has any effect where
+			// seconds on site across every visit, not just this one) shown in a page corner. Shared/
+			// master-controlled like the settings above; also only has any effect where
 			// chat_widget_enabled is on (the presence connection is what carries the number down).
 			'visitor_timer_enabled'         => '0',
 			// Business hours gate for the widget's offline banner — a simple "Mon-Fri 09:00-17:00"
@@ -624,118 +624,7 @@ if ( ! function_exists( 'ajcore_get_secret_setting_keys' ) ) {
 	}
 }
 
-if ( ! function_exists( 'ajcore_get_settings_encryption_key' ) ) {
-	/**
-	 * A dedicated, DB-persisted key for encrypting settings secrets — deliberately NOT derived
-	 * from wp_salt('auth')/AUTH_KEY (see the "ajenc1:" legacy scheme below for why that was a
-	 * mistake). wp-config.php's salts can change for reasons entirely outside this plugin's
-	 * control — a security-hardening plugin rotating them on a schedule, a hosting panel
-	 * regenerating wp-config.php, a migration that doesn't carry the file over — and every secret
-	 * encrypted under the old salt becomes permanently undecryptable the moment that happens,
-	 * silently reading back as an empty string. From the settings screen that looks exactly like
-	 * "the key got removed", even though the (now-unusable) ciphertext is still sitting untouched
-	 * in the database. Generated once, stored in wp_options (autoload=false — read only during
-	 * encrypt/decrypt, not on every page load), and never regenerated afterward, so it survives
-	 * wp-config.php changes/redeploys/salt rotation entirely.
-	 */
-	function ajcore_get_settings_encryption_key() {
-		// BUG FIX (was silently rotating the key on every single call — see the "critical" note in
-		// git history/PR discussion): this used to gate reuse of the stored key behind
-		// function_exists('sodium_crypto_secretbox_keybytes'), but that's the name of a CONSTANT
-		// (SODIUM_CRYPTO_SECRETBOX_KEYBYTES) in PHP's native sodium extension, not a callable
-		// function — function_exists() on it returns false on a standard install, so the "reuse the
-		// stored key" branch below never ran. Every encrypt/decrypt call fell through to generating
-		// and persisting a brand-new random key, overwriting the one anything previously encrypted
-		// actually needs — i.e. the exact "silently undecryptable" failure this whole ajenc2: scheme
-		// was built to prevent, just via a different mechanism. function_exists('sodium_crypto_secretbox')
-		// (the actual function used below and elsewhere in this file) is the right guard for "is
-		// libsodium available", and the key is validated on its own merits (decodes, right length).
-		$stored = get_option( 'ajcore_settings_encryption_key', '' );
-		if ( is_string( $stored ) && '' !== $stored ) {
-			$decoded = base64_decode( $stored, true );
-			if ( false !== $decoded && function_exists( 'sodium_crypto_secretbox' ) && SODIUM_CRYPTO_SECRETBOX_KEYBYTES === strlen( $decoded ) ) {
-				return $decoded;
-			}
-		}
-		$key = function_exists( 'random_bytes' ) ? random_bytes( SODIUM_CRYPTO_SECRETBOX_KEYBYTES ) : hash( 'sha256', wp_salt( 'auth' ) . microtime(), true );
-		update_option( 'ajcore_settings_encryption_key', base64_encode( $key ), false );
-		return $key;
-	}
-}
-
-if ( ! function_exists( 'ajcore_encrypt_setting_value' ) ) {
-	/**
-	 * Encrypt one settings value with the dedicated DB-persisted key above.
-	 * Format: "ajenc2:" + base64( nonce + secretbox ). Values that are empty or already on this
-	 * scheme pass through unchanged, so the transform is idempotent. A value still on the old
-	 * "ajenc1:" (wp_salt-keyed) scheme gets opportunistically decrypted and re-encrypted under
-	 * ajenc2: the next time it's saved — see ajcore_decrypt_setting_value()'s legacy branch.
-	 */
-	function ajcore_encrypt_setting_value( $value ) {
-		$value = (string) $value;
-		if ( '' === $value || 0 === strpos( $value, 'ajenc2:' ) ) {
-			return $value;
-		}
-		if ( 0 === strpos( $value, 'ajenc1:' ) ) {
-			$value = ajcore_decrypt_setting_value( $value );
-			if ( '' === $value ) {
-				return ''; // Already unrecoverable under the old scheme — nothing to carry forward.
-			}
-		}
-		if ( ! function_exists( 'sodium_crypto_secretbox' ) ) {
-			return $value;
-		}
-		$key   = ajcore_get_settings_encryption_key();
-		$nonce = random_bytes( SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
-		return 'ajenc2:' . base64_encode( $nonce . sodium_crypto_secretbox( $value, $nonce, $key ) );
-	}
-}
-
-if ( ! function_exists( 'ajcore_decrypt_setting_value' ) ) {
-	function ajcore_decrypt_setting_value( $value ) {
-		if ( ! is_string( $value ) ) {
-			return $value;
-		}
-		if ( 0 === strpos( $value, 'ajenc2:' ) ) {
-			if ( ! function_exists( 'sodium_crypto_secretbox_open' ) ) {
-				return '';
-			}
-			$raw = base64_decode( substr( $value, 7 ), true );
-			if ( false === $raw || strlen( $raw ) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ) {
-				return '';
-			}
-			$key   = ajcore_get_settings_encryption_key();
-			$plain = sodium_crypto_secretbox_open(
-				substr( $raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ),
-				substr( $raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ),
-				$key
-			);
-			return false === $plain ? '' : $plain;
-		}
-		if ( 0 === strpos( $value, 'ajenc1:' ) ) {
-			// Legacy scheme, keyed off wp_salt('auth') — this is the one that made secrets go
-			// undecryptable whenever the site's salts changed. Kept only so a value still on this
-			// scheme decrypts one more time (IF the salt hasn't already rotated away from what
-			// encrypted it) so it can be transparently upgraded to ajenc2: on next save; see
-			// ajcore_encrypt_setting_value() above.
-			if ( ! function_exists( 'sodium_crypto_secretbox_open' ) || ! function_exists( 'wp_salt' ) ) {
-				return '';
-			}
-			$raw = base64_decode( substr( $value, 7 ), true );
-			if ( false === $raw || strlen( $raw ) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ) {
-				return '';
-			}
-			$key   = hash( 'sha256', wp_salt( 'auth' ) . '|ajcore-settings-v1', true );
-			$plain = sodium_crypto_secretbox_open(
-				substr( $raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ),
-				substr( $raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ),
-				$key
-			);
-			return false === $plain ? '' : $plain;
-		}
-		return $value; // Plaintext (pre-migration) passes through.
-	}
-}
+require_once AJCORE_PLUGIN_DIR . 'includes/settings-encryption.php';
 
 if ( ! function_exists( 'ajcore_encrypt_settings_secrets' ) ) {
 	/**
@@ -2017,6 +1906,16 @@ if ( ! function_exists( 'ajcore_get_chat_setting_keys' ) ) {
 			'chat_transcript_email_subject',
 			'chat_transcript_email_heading',
 			'chat_transcript_email_body',
+			// The whole Live Chat network is master-controlled: the widget on/off switch and the
+			// passive-engagement toggles below are shared too, not per-site, so enabling chat on the
+			// master enables it everywhere (and secondary sites can't drift out of sync). Previously
+			// these were local per-site for a staged rollout — that's no longer how it's run.
+			'chat_widget_enabled',
+			'chat_engage_popup_enabled',
+			'chat_engage_popup_delay_seconds',
+			'visitor_identify_enabled',
+			'visitor_identify_delay_seconds',
+			'visitor_timer_enabled',
 		);
 	}
 }
@@ -2052,10 +1951,11 @@ if ( ! function_exists( 'ajcore_read_shared_chat_settings' ) ) {
 }
 
 /**
- * Live Chat server URL/notify secret are shared across every connected site — the master's local
- * option is the source of truth, pushed here on every save, and secondary sites overlay it in
- * ajforms_get_settings(). chat_widget_enabled deliberately does NOT go through this (see the
- * settings-default comment above).
+ * Every Live Chat setting (server URL, secrets, business hours, transcript copy, AND the widget
+ * enable/engagement toggles — see ajcore_get_chat_setting_keys()) is shared across every connected
+ * site: the master's local option is the source of truth, pushed here on every save, and secondary
+ * sites overlay it in ajforms_get_settings(). Enabling the widget on the master enables it
+ * network-wide.
  */
 if ( ! function_exists( 'ajcore_write_shared_chat_settings' ) ) {
 	function ajcore_write_shared_chat_settings( $settings ) {
@@ -2301,6 +2201,31 @@ add_action(
 			return;
 		}
 		ajcore_write_shared_rentec_settings( ajforms_get_settings() );
+	},
+	20
+);
+
+// The Live Chat widget/engagement toggles (chat_widget_enabled, chat_engage_popup_enabled,
+// visitor_identify_enabled, visitor_timer_enabled, and their delays) used to be local per-site;
+// they are now master-controlled network-wide. The shared 'ajcore_chat_settings' row already
+// exists (server URL/secrets have always been shared), so — unlike the Rentec/Gmail backfills — the
+// "is it published yet" check is whether that row has picked up the newly-shared keys. Publish the
+// master's current values once so existing secondary sites stop relying on their own local copies
+// without the admin re-saving the Live Chat settings page.
+add_action(
+	'admin_init',
+	function () {
+		if ( ! ajcore_is_shared_db_enabled()
+			|| ( function_exists( 'ajcore_is_stripe_sync_owner' ) && ! ajcore_is_stripe_sync_owner() )
+			|| ! function_exists( 'ajcore_read_shared_chat_settings' )
+			|| ! function_exists( 'ajcore_write_shared_chat_settings' ) ) {
+			return;
+		}
+		$shared_chat = ajcore_read_shared_chat_settings();
+		if ( is_array( $shared_chat ) && array_key_exists( 'chat_widget_enabled', $shared_chat ) ) {
+			return;
+		}
+		ajcore_write_shared_chat_settings( ajforms_get_settings() );
 	},
 	20
 );
@@ -2633,11 +2558,12 @@ if ( ! function_exists( 'ajcore_log_outgoing_mail_failed' ) ) {
 }
 
 /**
- * Renders the self-hosted Live Chat widget on the front end of this site, when enabled locally
- * (see the "Live Chat" CP Settings section — chat_widget_enabled is deliberately per-site, not
- * shared, so the widget can be rolled out to one site at a time). Vanilla JS, no framework, to
- * keep the visitor-facing payload tiny; connects directly to the AJOps chat server's WebSocket
- * endpoint configured in chat_server_url.
+ * Renders the self-hosted Live Chat widget on the front end of this site, when chat_widget_enabled
+ * is on (see the "Live Chat" CP Settings section — that toggle, like every other chat_* setting, is
+ * master-controlled and shared across the connected-site network via ajforms_get_settings(), so
+ * enabling it on the master enables the widget on every site). Vanilla JS, no framework, to keep
+ * the visitor-facing payload tiny; connects directly to the AJOps chat server's WebSocket endpoint
+ * configured in chat_server_url.
  */
 function ajcore_render_chat_widget() {
 	if ( is_admin() ) {
@@ -2745,3 +2671,5 @@ function run_ajforms() {
 }
 
 run_ajforms();
+
+require_once AJCORE_PLUGIN_DIR . 'modules/reviews/bootstrap.php';
