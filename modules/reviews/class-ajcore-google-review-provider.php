@@ -12,18 +12,21 @@ final class AJCore_Google_Review_Provider implements AJCore_Review_Provider {
 	}
 
 	public static function redirect_uri() { return admin_url( 'admin-post.php?action=ajcore_reviews_oauth' ); }
+	private static function query_url( $url, $query ) {
+		return add_query_arg( array_map( function( $value ) { return rawurlencode( (string) $value ); }, $query ), $url );
+	}
 
 	public function authorization_url( $state, $challenge ) {
 		if ( empty( $this->credentials['client_id'] ) || empty( $this->credentials['client_secret'] ) ) { return new WP_Error( 'credentials_required' ); }
-		return add_query_arg( array(
+		return self::query_url( 'https://accounts.google.com/o/oauth2/v2/auth', array(
 			'client_id' => $this->credentials['client_id'], 'redirect_uri' => self::redirect_uri(),
 			'response_type' => 'code', 'scope' => self::SCOPE . ' openid email', 'access_type' => 'offline',
 			'prompt' => 'consent', 'state' => $state, 'code_challenge' => $challenge, 'code_challenge_method' => 'S256',
-		), 'https://accounts.google.com/o/oauth2/v2/auth' );
+		) );
 	}
 
 	/** Fixed HTTPS endpoints; redirects disabled so bearer credentials cannot follow a redirect. */
-	private function http( $url, $args = array() ) {
+	private function http( $url, $args = array(), $empty_response_allowed = false ) {
 		if ( microtime( true ) >= $this->deadline ) { return new WP_Error( 'sync_limit' ); }
 		$args = array_merge( array( 'timeout' => 12, 'redirection' => 0, 'limit_response_size' => 2 * MB_IN_BYTES ), $args );
 		$response = wp_remote_request( $url, $args );
@@ -33,6 +36,7 @@ final class AJCore_Google_Review_Provider implements AJCore_Review_Provider {
 			$code = $status === 429 || $status >= 500 ? 'temporary_error' : ( in_array( $status, array( 400, 401 ), true ) ? 'authorization_failed' : 'access_denied' );
 			return new WP_Error( $code );
 		}
+		if ( $empty_response_allowed ) { return true; }
 		$data = json_decode( wp_remote_retrieve_body( $response ), true );
 		return is_array( $data ) ? $data : new WP_Error( 'invalid_response' );
 	}
@@ -77,7 +81,7 @@ final class AJCore_Google_Review_Provider implements AJCore_Review_Provider {
 	private function listing( $url, $key, $query = array() ) {
 		$items = array(); $seen = array();
 		do {
-			$data = $this->get( add_query_arg( $query, $url ) );
+			$data = $this->get( self::query_url( $url, $query ) );
 			if ( is_wp_error( $data ) ) { return $data; }
 			if ( isset( $data[$key] ) && ! is_array( $data[$key] ) ) { return new WP_Error( 'invalid_response' ); }
 			foreach ( $data[$key] ?? array() as $item ) {
@@ -104,12 +108,12 @@ final class AJCore_Google_Review_Provider implements AJCore_Review_Provider {
 	public function fetch( $account, $location ) {
 		if ( ! preg_match( '#^accounts/[0-9]+$#D', $account ) || ! preg_match( '#^locations/[0-9]+$#D', $location ) ) { return new WP_Error( 'invalid_location' ); }
 		$retrieved = time();
-		$details = $this->get( add_query_arg( 'readMask', 'name,title,metadata', 'https://mybusinessbusinessinformation.googleapis.com/v1/' . $location ) );
+		$details = $this->get( self::query_url( 'https://mybusinessbusinessinformation.googleapis.com/v1/' . $location, array( 'readMask' => 'name,title,metadata' ) ) );
 		if ( is_wp_error( $details ) ) { return $details; }
 		if ( ( $details['name'] ?? '' ) !== $location || ! is_string( $details['title'] ?? null ) || ( isset( $details['metadata'] ) && ! is_array( $details['metadata'] ) ) ) { return new WP_Error( 'invalid_response' ); }
 		$reviews = array(); $tokens = array(); $token = ''; $summary = null; $bytes = 0;
 		do {
-			$data = $this->get( add_query_arg( array( 'pageSize' => 50, 'pageToken' => $token, 'orderBy' => 'updateTime desc' ), 'https://mybusiness.googleapis.com/v4/' . $account . '/' . $location . '/reviews' ) );
+			$data = $this->get( self::query_url( 'https://mybusiness.googleapis.com/v4/' . $account . '/' . $location . '/reviews', array( 'pageSize' => 50, 'pageToken' => $token, 'orderBy' => 'updateTime desc' ) ) );
 			if ( is_wp_error( $data ) ) { return $data; }
 			// Protobuf JSON may omit a zero-valued total on an empty collection.
 			if ( ! isset( $data['totalReviewCount'] ) && empty( $data['reviews'] ) && empty( $data['nextPageToken'] ) ) { $data['totalReviewCount'] = 0; }
@@ -154,6 +158,6 @@ final class AJCore_Google_Review_Provider implements AJCore_Review_Provider {
 
 	public function revoke() {
 		$token = $this->credentials['refresh_token'] ?? ( $this->credentials['access_token'] ?? '' );
-		return $token ? $this->http( 'https://oauth2.googleapis.com/revoke', array( 'method' => 'POST', 'body' => array( 'token' => $token ) ) ) : true;
+		return $token ? $this->http( 'https://oauth2.googleapis.com/revoke', array( 'method' => 'POST', 'body' => array( 'token' => $token ) ), true ) : true;
 	}
 }

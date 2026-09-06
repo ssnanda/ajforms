@@ -216,4 +216,21 @@ class AJCore_Reviews_Test extends WP_UnitTestCase {
 		$this->assertSame( array(), AJCore_Reviews::locked( function() { return ( new AJCore_Google_Review_Provider() )->accounts(); } ) );
 		$this->assertStringNotContainsString( 'fixture-renewed', get_option( 'ajcore_reviews_credentials' ) );
 	}
+	public function test_revocation_accepts_success_with_empty_body() {
+		$this->http( function( $pre, $args, $url ) {
+			$this->assertSame( 'https://oauth2.googleapis.com/revoke', $url );
+			return array( 'response' => array( 'code' => 200 ), 'body' => '', 'headers' => array() );
+		} );
+		$this->assertTrue( ( new AJCore_Google_Review_Provider() )->revoke() );
+	}
+	public function test_oauth_url_encodes_redirect_scope_and_pkce() {
+		$url = ( new AJCore_Google_Review_Provider() )->authorization_url( 'fixture-state', 'fixture-challenge' );
+		parse_str( wp_parse_url( $url, PHP_URL_QUERY ), $query );
+		$this->assertSame( AJCore_Google_Review_Provider::redirect_uri(), $query['redirect_uri'] );
+		$this->assertSame( AJCore_Google_Review_Provider::SCOPE . ' openid email', $query['scope'] );
+		$this->assertSame( 'S256', $query['code_challenge_method'] );
+		$this->assertSame( 'fixture-challenge', $query['code_challenge'] );
+		$this->assertStringNotContainsString( 'client_secret', $url );
+		$this->assertStringNotContainsString( ' ', $url );
+	}
 }

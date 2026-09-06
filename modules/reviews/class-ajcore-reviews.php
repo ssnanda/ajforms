@@ -61,12 +61,17 @@ final class AJCore_Reviews {
 
 	public static function snapshot() {
 		$data = AJCore_Reviews_Vault::read( 'ajcore_reviews_snapshot' );
-		if ( empty( $data['retrieved_at'] ) || empty( $data['expires_at'] ) || $data['retrieved_at'] > time() || $data['expires_at'] > $data['retrieved_at'] + self::TTL || $data['expires_at'] <= time() ) { return array(); }
+		if ( ! is_int( $data['retrieved_at'] ?? null ) || ! is_int( $data['expires_at'] ?? null ) || ! is_array( $data['reviews'] ?? null ) || ! is_array( $data['summary'] ?? null ) || $data['retrieved_at'] > time() || $data['expires_at'] > $data['retrieved_at'] + self::TTL || $data['expires_at'] <= time() ) { return array(); }
+		$summary = $data['summary'];
+		if ( ( $summary['location'] ?? '' ) !== ( self::config()['location'] ?? '' ) || ! is_int( $summary['total'] ?? null ) || $summary['total'] < 0 || ! is_string( $summary['title'] ?? null ) || ( isset( $summary['rating'] ) && ( ! is_numeric( $summary['rating'] ) || $summary['rating'] < 0 || $summary['rating'] > 5 ) ) ) { return array(); }
+		foreach ( array( 'maps_url', 'write_url' ) as $field ) { if ( ! is_string( $summary[$field] ?? null ) ) { return array(); } }
+		foreach ( $data['reviews'] as $key => $review ) { if ( ! self::valid_review( $review ) || $key !== $review['key'] ) { unset( $data['reviews'][$key] ); } }
 		return $data;
 	}
 
 	public static function cleanup() {
 		return self::locked( function() {
+			AJCore_Reviews_Vault::cleanup_database_copies();
 			if ( ! self::snapshot() ) { AJCore_Reviews_Vault::delete( 'ajcore_reviews_snapshot' ); AJCore_Reviews_Vault::delete( 'ajcore_reviews_selection' ); }
 			foreach ( array( 'ajcore_reviews_choices', 'ajcore_reviews_oauth' ) as $key ) {
 				$data = AJCore_Reviews_Vault::read( $key );
@@ -154,7 +159,7 @@ final class AJCore_Reviews {
 			$review['order'] = (int) $selection[$key]; $items[] = $review;
 		}
 		usort( $items, function( $a, $b ) use ( $order ) {
-			$comparison = $order === 'date' ? strcmp( $b['date'], $a['date'] ) : $a['order'] <=> $b['order'];
+			$comparison = $order === 'date' ? strtotime( $b['date'] ) <=> strtotime( $a['date'] ) : $a['order'] <=> $b['order'];
 			return $comparison ?: strcmp( $a['key'], $b['key'] );
 		} );
 		return array_slice( $items, 0, max( 1, min( 50, (int) $limit ) ) );

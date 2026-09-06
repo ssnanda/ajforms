@@ -33,7 +33,21 @@ final class AJCore_Reviews_Vault {
 
 	private static function temporary( $option ) { return in_array( $option, array( 'ajcore_reviews_snapshot', 'ajcore_reviews_choices', 'ajcore_reviews_oauth' ), true ); }
 	public static function read( $option ) { return self::open( self::temporary( $option ) ? get_transient( $option ) : get_option( $option, '' ) ); }
-	public static function delete( $option ) { return self::temporary( $option ) ? delete_transient( $option ) : delete_option( $option ); }
+	public static function delete( $option ) {
+		if ( ! self::temporary( $option ) ) { return delete_option( $option ); }
+		$result = delete_transient( $option );
+		// Remove database shadows as well if the host switched to an external object cache.
+		delete_option( '_transient_' . $option ); delete_option( '_transient_timeout_' . $option );
+		return $result;
+	}
+	public static function cleanup_database_copies() {
+		foreach ( array( 'ajcore_reviews_snapshot', 'ajcore_reviews_choices', 'ajcore_reviews_oauth' ) as $option ) {
+			$expiry = (int) get_option( '_transient_timeout_' . $option, 0 );
+			if ( wp_using_ext_object_cache() || ( $expiry && $expiry <= time() ) ) {
+				delete_option( '_transient_' . $option ); delete_option( '_transient_timeout_' . $option );
+			}
+		}
+	}
 
 	public static function write( $option, $data ) {
 		$value = self::seal( $data );
