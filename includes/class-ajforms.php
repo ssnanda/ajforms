@@ -7898,6 +7898,13 @@ class AJForms {
 			'notification_from_name' => isset( $plugin_settings['default_from_name'] ) ? $plugin_settings['default_from_name'] : get_bloginfo( 'name' ),
 			'notification_from_email' => '',
 			'notification_reply_to' => '',
+			// Autoresponder: a "we received your message" email to the person who submitted the
+			// form. Only sends when enabled AND the form has an email field with a valid address;
+			// existing forms (no setting) keep sending only the office notification.
+			'autoresponder_enabled'   => false,
+			'autoresponder_subject'   => 'We received your message',
+			'autoresponder_body'      => "Hi,\n\nThanks for getting in touch — we've received your message and will get back to you shortly. A copy of what you sent is below for your records.\n\n{submission_table}",
+			'autoresponder_from_name' => isset( $plugin_settings['default_from_name'] ) ? $plugin_settings['default_from_name'] : get_bloginfo( 'name' ),
 			'button_alignment'      => 'left',
 			'form_description'      => '',
 			'success_message'       => isset( $plugin_settings['default_success_message'] ) ? $plugin_settings['default_success_message'] : 'Form submitted successfully.',
@@ -11494,6 +11501,66 @@ class AJForms {
 		wp_mail( $recipients, $subject, wp_kses_post( $body ), $headers, $attachments );
 	}
 
+	/**
+	 * Autoresponder — a confirmation email to the person who submitted the form. Sends only when
+	 * the per-form setting is on and the submission carries a valid email-type field value.
+	 * Reply-To is the office notification address so the visitor's reply reaches staff.
+	 */
+	private function send_form_autoresponder( $form, $lead_data, $settings ) {
+		if ( empty( $settings['autoresponder_enabled'] ) ) {
+			return;
+		}
+
+		$to = '';
+		foreach ( $lead_data as $field_id => $field ) {
+			if ( ! is_array( $field ) || 0 === strpos( (string) $field_id, '_' ) ) {
+				continue;
+			}
+			if ( empty( $field['type'] ) || 'email' !== $field['type'] || empty( $field['value'] ) ) {
+				continue;
+			}
+			$candidate = sanitize_email( (string) $field['value'] );
+			if ( '' !== $candidate && is_email( $candidate ) ) {
+				$to = $candidate;
+				break;
+			}
+		}
+
+		if ( '' === $to ) {
+			return;
+		}
+
+		$subject_template = ! empty( $settings['autoresponder_subject'] ) ? (string) $settings['autoresponder_subject'] : 'We received your message';
+		$subject          = sanitize_text_field( $this->replace_template_tags( $subject_template, $form, $lead_data ) );
+
+		$body_template = ! empty( $settings['autoresponder_body'] ) ? (string) $settings['autoresponder_body'] : "Thanks for getting in touch — we've received your message and will get back to you shortly.\n\n{submission_table}";
+		$body          = $this->replace_template_tags( $body_template, $form, $lead_data );
+		// A plain-text body still needs its line breaks honoured in an HTML email.
+		if ( $body === wp_strip_all_tags( $body ) ) {
+			$body = wpautop( $body );
+		}
+
+		$headers = array( 'Content-Type: text/html; charset=UTF-8' );
+
+		$from_name = ! empty( $settings['autoresponder_from_name'] )
+			? sanitize_text_field( $this->replace_template_tags( (string) $settings['autoresponder_from_name'], $form, $lead_data ) )
+			: get_bloginfo( 'name' );
+		$from_email = sanitize_email( ajcore_default_system_from_email() );
+		if ( '' !== $from_email && is_email( $from_email ) ) {
+			$headers[] = 'From: ' . ( '' !== $from_name ? $from_name . ' ' : '' ) . '<' . $from_email . '>';
+		}
+
+		$office = $this->get_notification_recipients( $settings );
+		if ( ! empty( $office ) ) {
+			$reply_to = sanitize_email( (string) reset( $office ) );
+			if ( '' !== $reply_to && is_email( $reply_to ) ) {
+				$headers[] = 'Reply-To: ' . $reply_to;
+			}
+		}
+
+		wp_mail( $to, $subject, wp_kses_post( $body ), $headers );
+	}
+
 	private function get_rule_field_value( $field_key, $lead_data ) {
 		foreach ( $lead_data as $field_id => $field ) {
 			if ( 0 === strpos( (string) $field_id, '_' ) || ! is_array( $field ) ) {
@@ -11916,6 +11983,7 @@ class AJForms {
 		}
 
 		$this->send_form_notification( $form, $lead_data, $settings );
+		$this->send_form_autoresponder( $form, $lead_data, $settings );
 		$this->maybe_create_asana_task( $form, $lead_data, $settings );
 
 		$confirmation_result = $this->evaluate_confirmation_rules( $form, $lead_data, $settings );

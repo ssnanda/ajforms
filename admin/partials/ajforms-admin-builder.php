@@ -462,6 +462,27 @@ window.ajFormsInitialData = <?php echo wp_json_encode( $initial_data ); ?>;
 									<?php endforeach; ?>
 								</div>
 							</div>
+								<div class="wpf-inspector-section-title" style="margin-top:24px;">Confirmation Email to Submitter</div>
+								<div class="wpf-setting-row">
+									<label class="wpf-toggle-row">
+										<span>Send a confirmation to the person who submitted</span>
+										<input type="checkbox" id="wpf-form-autoresponder-enabled" <?php checked( ! empty( $initial_data['schema']['settings']['autoresponder_enabled'] ) ); ?>>
+									</label>
+									<p class="wpf-setting-help">Only sends when the form has an Email field and the submitter enters a valid address. Replies go to the notification address above.</p>
+								</div>
+								<div class="wpf-setting-row">
+									<label>Subject</label>
+									<input type="text" id="wpf-form-autoresponder-subject" value="<?php echo esc_attr( isset( $initial_data['schema']['settings']['autoresponder_subject'] ) ? $initial_data['schema']['settings']['autoresponder_subject'] : 'We received your message' ); ?>">
+								</div>
+								<div class="wpf-setting-row">
+									<label>From Name</label>
+									<input type="text" id="wpf-form-autoresponder-from-name" value="<?php echo esc_attr( isset( $initial_data['schema']['settings']['autoresponder_from_name'] ) ? $initial_data['schema']['settings']['autoresponder_from_name'] : ( isset( $plugin_settings['default_from_name'] ) ? $plugin_settings['default_from_name'] : get_bloginfo( 'name' ) ) ); ?>">
+								</div>
+								<div class="wpf-setting-row">
+									<label>Message Body</label>
+									<textarea id="wpf-form-autoresponder-body" rows="6"><?php echo esc_textarea( isset( $initial_data['schema']['settings']['autoresponder_body'] ) ? $initial_data['schema']['settings']['autoresponder_body'] : "Hi,\n\nThanks for getting in touch — we've received your message and will get back to you shortly. A copy of what you sent is below for your records.\n\n{submission_table}" ); ?></textarea>
+									<p class="wpf-setting-help">Same variables as the notification above ({form_title}, {field_*}, {submission_table}, …). Plain text is fine — line breaks are kept.</p>
+								</div>
 						</div>
 
 						<div class="wpf-inspector-section" data-settings-section="confirmation">

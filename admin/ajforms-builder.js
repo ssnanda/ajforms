@@ -33,6 +33,10 @@ function initAJFormsBuilder() {
             notification_from_name: '',
             notification_from_email: '',
             notification_reply_to: '',
+            autoresponder_enabled: false,
+            autoresponder_subject: 'We received your message',
+            autoresponder_from_name: '',
+            autoresponder_body: '',
             button_alignment: 'left',
             form_description: '',
             success_message: 'Form submitted successfully.',
@@ -567,6 +571,10 @@ function initAJFormsBuilder() {
                     notification_from_name: '',
                     notification_from_email: '',
                     notification_reply_to: '',
+                    autoresponder_enabled: false,
+                    autoresponder_subject: 'We received your message',
+                    autoresponder_from_name: '',
+                    autoresponder_body: '',
                     button_alignment: 'left',
                     form_description: '',
                     success_message: 'Form submitted successfully.',
@@ -619,6 +627,10 @@ function initAJFormsBuilder() {
                         notification_from_name: '',
                         notification_from_email: '',
                         notification_reply_to: '',
+                        autoresponder_enabled: false,
+                        autoresponder_subject: 'We received your message',
+                        autoresponder_from_name: '',
+                        autoresponder_body: '',
                         button_alignment: 'left',
                         form_description: '',
                         success_message: 'Form submitted successfully.',
@@ -671,6 +683,10 @@ function initAJFormsBuilder() {
                 notification_from_name: '',
                 notification_from_email: '',
                 notification_reply_to: '',
+                autoresponder_enabled: false,
+                autoresponder_subject: 'We received your message',
+                autoresponder_from_name: '',
+                autoresponder_body: '',
                 button_alignment: 'left',
                 form_description: '',
                 success_message: 'Form submitted successfully.',
@@ -936,6 +952,22 @@ function initAJFormsBuilder() {
         }
         if (notificationReplyToInput) {
             notificationReplyToInput.value = formSchema.settings.notification_reply_to || '';
+        }
+        const autoresponderEnabledInput = document.getElementById('wpf-form-autoresponder-enabled');
+        const autoresponderSubjectInput = document.getElementById('wpf-form-autoresponder-subject');
+        const autoresponderFromNameInput = document.getElementById('wpf-form-autoresponder-from-name');
+        const autoresponderBodyInput = document.getElementById('wpf-form-autoresponder-body');
+        if (autoresponderEnabledInput) {
+            autoresponderEnabledInput.checked = !!formSchema.settings.autoresponder_enabled;
+        }
+        if (autoresponderSubjectInput) {
+            autoresponderSubjectInput.value = formSchema.settings.autoresponder_subject || 'We received your message';
+        }
+        if (autoresponderFromNameInput) {
+            autoresponderFromNameInput.value = formSchema.settings.autoresponder_from_name || '';
+        }
+        if (autoresponderBodyInput) {
+            autoresponderBodyInput.value = formSchema.settings.autoresponder_body || '';
         }
         if (descriptionInput) {
             descriptionInput.value = formSchema.settings.form_description || '';
@@ -2469,6 +2501,14 @@ function initAJFormsBuilder() {
         formSchema.settings.notification_from_name = notificationFromNameInput ? notificationFromNameInput.value.trim() : '';
         formSchema.settings.notification_from_email = notificationFromEmailInput ? notificationFromEmailInput.value.trim() : '';
         formSchema.settings.notification_reply_to = notificationReplyToInput ? notificationReplyToInput.value.trim() : '';
+        const autoresponderEnabledInput = document.getElementById('wpf-form-autoresponder-enabled');
+        const autoresponderSubjectInput = document.getElementById('wpf-form-autoresponder-subject');
+        const autoresponderFromNameInput = document.getElementById('wpf-form-autoresponder-from-name');
+        const autoresponderBodyInput = document.getElementById('wpf-form-autoresponder-body');
+        formSchema.settings.autoresponder_enabled = autoresponderEnabledInput ? !!autoresponderEnabledInput.checked : false;
+        formSchema.settings.autoresponder_subject = autoresponderSubjectInput ? (autoresponderSubjectInput.value.trim() || 'We received your message') : 'We received your message';
+        formSchema.settings.autoresponder_from_name = autoresponderFromNameInput ? autoresponderFromNameInput.value.trim() : '';
+        formSchema.settings.autoresponder_body = autoresponderBodyInput ? autoresponderBodyInput.value.trim() : '';
         formSchema.settings.form_description = descriptionInput ? descriptionInput.value.trim() : '';
         formSchema.settings.success_message = successMessageInput ? (successMessageInput.value.trim() || 'Form submitted successfully.') : 'Form submitted successfully.';
         formSchema.settings.button_alignment = buttonAlignmentInput ? (buttonAlignmentInput.value || 'left') : 'left';
