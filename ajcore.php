@@ -3,7 +3,7 @@
  * Plugin Name:       AJ Core
  * Plugin URI:        https://github.com/ssnanda/ajcore
  * Description:       A modular WordPress business toolkit for forms, payments, portals, auth, CRM, and automations.
- * Version: 0.7.289
+ * Version: 0.7.290
  * Author:            IT Spector LLC
  * Author URI:        https://itspector.com
  * Update URI:        false
@@ -18,7 +18,7 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 if ( ! defined( 'AJCORE_VERSION' ) ) {
-	define( 'AJCORE_VERSION', '0.7.289' );
+	define( 'AJCORE_VERSION', '0.7.290' );
 }
 
 if ( ! defined( 'AJCORE_PLUGIN_DIR' ) ) {
@@ -315,12 +315,14 @@ if ( ! function_exists( 'ajforms_get_settings_defaults' ) ) {
 			// E-Signatures (BreezeDoc). A single shared BreezeDoc account, authenticated with a
 			// Personal Access Token, used to send templates out for customer signature.
 			'breezedoc_api_token'           => '',
-			// Self-hosted Live Chat. Every chat_* / visitor_* key below is shared across all
-			// connected sites and master-controlled (see ajcore_get_chat_setting_keys() — the whole
-			// list rides the 'ajcore_chat_settings' shared row) — the master's Live Chat settings
-			// page is the one place they're editable, secondary sites overlay them read-only in
-			// ajforms_get_settings(). chat_widget_enabled included: turning the widget on for the
-			// master turns it on network-wide.
+			// Self-hosted Live Chat. Most chat_* / visitor_* keys below are shared across all
+			// connected sites and master-controlled (see ajcore_get_chat_setting_keys() — that list
+			// rides the 'ajcore_chat_settings' shared row) — the master's Live Chat settings page is
+			// the one place they're editable, secondary sites overlay them read-only in
+			// ajforms_get_settings(). The one exception is chat_widget_enabled: it is deliberately a
+			// LOCAL per-site option (never in ajcore_get_chat_setting_keys(), never overlaid), so each
+			// site decides for itself whether the visitor widget shows — even a secondary site on the
+			// shared network can switch its own widget off without affecting the others.
 			'chat_server_url'               => '',
 			// Optional override of chat_server_url for AJCore's own outbound /chat/notify call
 			// only (never sent to the browser). In production these are identical and this stays
@@ -331,6 +333,7 @@ if ( ! function_exists( 'ajforms_get_settings_defaults' ) ) {
 			'chat_notify_secret'            => '',
 			'chat_ws_token_secret'          => '',
 			'chat_internal_secret'          => '',
+			// LOCAL per-site — see the note above the Live Chat block. Not shared, not overlaid.
 			'chat_widget_enabled'           => '0',
 			// Passive "want to text us?" nudge — on by default (matches the widget's original
 			// always-on behavior, before this toggle existed) so existing sites see no change.
@@ -338,9 +341,9 @@ if ( ! function_exists( 'ajforms_get_settings_defaults' ) ) {
 			'chat_engage_popup_delay_seconds' => '25',
 			// "Live Visitors" self-identify prompt — a light, dismissible ask (name/email/phone, all
 			// optional) shown from the chat widget's presence connection, independent of whether the
-			// visitor ever opens the chat panel. Shared/master-controlled like chat_widget_enabled
-			// above, and only has any effect where that's also on (the prompt rides the widget's
-			// existing presence WebSocket — see ajcore-chat-widget.js).
+			// visitor ever opens the chat panel. Shared/master-controlled, and only has any effect
+			// where the (local) chat_widget_enabled switch is also on for that site — the prompt
+			// rides the widget's existing presence WebSocket (see ajcore-chat-widget.js).
 			'visitor_identify_enabled'      => '0',
 			// No fixed-collision floor needed against the engage popup's delay/auto-dismiss window —
 			// the widget retries until the engage popup (if any) is off-screen rather than a one-shot
@@ -348,8 +351,8 @@ if ( ! function_exists( 'ajforms_get_settings_defaults' ) ) {
 			'visitor_identify_delay_seconds' => '55',
 			// Visitor-facing "visit timer" — a tiny, unlabeled, barely-there number (cumulative
 			// seconds on site across every visit, not just this one) shown in a page corner. Shared/
-			// master-controlled like the settings above; also only has any effect where
-			// chat_widget_enabled is on (the presence connection is what carries the number down).
+			// master-controlled like the settings above; also only has any effect where the (local)
+			// chat_widget_enabled switch is on for that site (the presence connection carries it down).
 			'visitor_timer_enabled'         => '0',
 			// Business hours gate for the widget's offline banner — a simple "Mon-Fri 09:00-17:00"
 			// style string parsed client-side (widget evaluates it against the visitor's local
@@ -547,6 +550,10 @@ if ( ! function_exists( 'ajforms_get_settings' ) ) {
 				}
 				if ( function_exists( 'ajcore_read_shared_chat_settings' ) ) {
 					$shared_chat = ajcore_read_shared_chat_settings();
+					// chat_widget_enabled is a local per-site switch. Older builds (0.7.285–0.7.289)
+					// published it into the shared row; drop it here so a stale value there can never
+					// override this site's own local choice.
+					unset( $shared_chat['chat_widget_enabled'] );
 					if ( ! empty( $shared_chat ) ) {
 						$settings = array_merge( $settings, $shared_chat );
 					}
@@ -1906,11 +1913,13 @@ if ( ! function_exists( 'ajcore_get_chat_setting_keys' ) ) {
 			'chat_transcript_email_subject',
 			'chat_transcript_email_heading',
 			'chat_transcript_email_body',
-			// The whole Live Chat network is master-controlled: the widget on/off switch and the
-			// passive-engagement toggles below are shared too, not per-site, so enabling chat on the
-			// master enables it everywhere (and secondary sites can't drift out of sync). Previously
-			// these were local per-site for a staged rollout — that's no longer how it's run.
-			'chat_widget_enabled',
+			// The passive-engagement toggles below are shared/master-controlled network-wide, so a
+			// secondary site can't drift its popup / identify / timer behaviour out of sync.
+			//
+			// chat_widget_enabled is deliberately NOT in this list: the visitor widget on/off switch
+			// is a local per-site option (stored only in each site's own 'ajforms_settings', never
+			// written to or read back from the shared 'ajcore_chat_settings' row), so every site —
+			// master or secondary — decides for itself whether the widget shows.
 			'chat_engage_popup_enabled',
 			'chat_engage_popup_delay_seconds',
 			'visitor_identify_enabled',
@@ -2205,13 +2214,14 @@ add_action(
 	20
 );
 
-// The Live Chat widget/engagement toggles (chat_widget_enabled, chat_engage_popup_enabled,
-// visitor_identify_enabled, visitor_timer_enabled, and their delays) used to be local per-site;
-// they are now master-controlled network-wide. The shared 'ajcore_chat_settings' row already
-// exists (server URL/secrets have always been shared), so — unlike the Rentec/Gmail backfills — the
-// "is it published yet" check is whether that row has picked up the newly-shared keys. Publish the
+// The passive-engagement toggles (chat_engage_popup_enabled, visitor_identify_enabled,
+// visitor_timer_enabled, and their delays) used to be local per-site; they are now
+// master-controlled network-wide. The shared 'ajcore_chat_settings' row already exists (server
+// URL/secrets have always been shared), so — unlike the Rentec/Gmail backfills — the "is it
+// published yet" check is whether that row has picked up the newly-shared keys. Publish the
 // master's current values once so existing secondary sites stop relying on their own local copies
-// without the admin re-saving the Live Chat settings page.
+// without the admin re-saving the Live Chat settings page. (chat_widget_enabled is NOT part of
+// this — it stayed a local per-site option; see ajcore_get_chat_setting_keys().)
 add_action(
 	'admin_init',
 	function () {
@@ -2222,7 +2232,7 @@ add_action(
 			return;
 		}
 		$shared_chat = ajcore_read_shared_chat_settings();
-		if ( is_array( $shared_chat ) && array_key_exists( 'chat_widget_enabled', $shared_chat ) ) {
+		if ( is_array( $shared_chat ) && array_key_exists( 'chat_engage_popup_enabled', $shared_chat ) ) {
 			return;
 		}
 		ajcore_write_shared_chat_settings( ajforms_get_settings() );
@@ -2559,11 +2569,12 @@ if ( ! function_exists( 'ajcore_log_outgoing_mail_failed' ) ) {
 
 /**
  * Renders the self-hosted Live Chat widget on the front end of this site, when chat_widget_enabled
- * is on (see the "Live Chat" CP Settings section — that toggle, like every other chat_* setting, is
- * master-controlled and shared across the connected-site network via ajforms_get_settings(), so
- * enabling it on the master enables the widget on every site). Vanilla JS, no framework, to keep
- * the visitor-facing payload tiny; connects directly to the AJOps chat server's WebSocket endpoint
- * configured in chat_server_url.
+ * is on. That toggle is a LOCAL per-site option (unlike the other chat_* settings — server URL,
+ * secrets, engagement toggles — which are master-controlled and shared across the connected-site
+ * network via ajforms_get_settings()), so each site turns its own visitor widget on or off. The
+ * shared config still has to be in place (chat_server_url, site UUID) for the widget to connect.
+ * Vanilla JS, no framework, to keep the visitor-facing payload tiny; connects directly to the
+ * AJOps chat server's WebSocket endpoint configured in chat_server_url.
  */
 function ajcore_render_chat_widget() {
 	if ( is_admin() ) {

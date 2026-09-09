@@ -28653,8 +28653,12 @@ class AJForms_Admin {
 		$is_shared_db = function_exists( 'ajcore_is_shared_db_enabled' ) && ajcore_is_shared_db_enabled();
 		$is_master    = ! function_exists( 'ajcore_is_stripe_sync_owner' ) || ajcore_is_stripe_sync_owner();
 
+		// The visitor widget on/off switch is a LOCAL per-site setting even in shared-DB mode — every
+		// site (master or secondary) saves its own value from this form. Everything else in the Live
+		// Chat section is the shared, master-only network config handled in the block below.
+		$settings['chat_widget_enabled'] = isset( $_POST['chat_widget_enabled'] ) ? '1' : '0';
+
 		if ( ! $is_shared_db || $is_master ) {
-			$settings['chat_widget_enabled']            = isset( $_POST['chat_widget_enabled'] ) ? '1' : '0';
 			$settings['chat_engage_popup_enabled']      = isset( $_POST['chat_engage_popup_enabled'] ) ? '1' : '0';
 			$settings['chat_engage_popup_delay_seconds'] = isset( $_POST['chat_engage_popup_delay_seconds'] ) ? max( 0, absint( $_POST['chat_engage_popup_delay_seconds'] ) ) : 25;
 			$settings['visitor_identify_enabled']       = isset( $_POST['visitor_identify_enabled'] ) ? '1' : '0';
@@ -28751,7 +28755,7 @@ class AJForms_Admin {
 			<?php endif; ?>
 
 			<?php if ( $read_only ) : ?>
-				<div class="notice notice-info inline"><p><?php esc_html_e( 'Live Chat is a single shared configuration for the whole connected-site network — including whether the widget is enabled — managed on the master AJ Core site. These settings are read-only here.', 'ajforms' ); ?></p></div>
+				<div class="notice notice-info inline"><p><?php esc_html_e( 'The Live Chat configuration (server, secrets, engagement prompts, business hours, transcript email) is shared across the whole connected-site network and managed on the master AJ Core site, so those fields are read-only here. Whether the chat widget shows to visitors on THIS site is a local setting — the checkbox below is editable and only affects this site.', 'ajforms' ); ?></p></div>
 			<?php endif; ?>
 
 			<form method="post" action="<?php echo esc_url( $action_url ); ?>">
@@ -28760,10 +28764,10 @@ class AJForms_Admin {
 
 				<div class="ajforms-settings-field" style="margin-bottom:16px;">
 					<label style="display:flex;align-items:center;gap:8px;font-weight:600;">
-						<input type="checkbox" name="chat_widget_enabled" value="1" <?php checked( '1', $settings['chat_widget_enabled'] ); ?> <?php disabled( $read_only ); ?>>
-						<?php esc_html_e( 'Enable chat widget across the connected-site network', 'ajforms' ); ?>
+						<input type="checkbox" name="chat_widget_enabled" value="1" <?php checked( '1', $settings['chat_widget_enabled'] ); ?>>
+						<?php esc_html_e( 'Show the chat widget to visitors on this site', 'ajforms' ); ?>
 					</label>
-					<div class="ajforms-settings-help"><?php esc_html_e( 'Shows the floating chat bubble to visitors on every connected site. This is a network-wide switch, set on the master.', 'ajforms' ); ?></div>
+					<div class="ajforms-settings-help"><?php esc_html_e( 'Local to this site — shows or hides the floating chat bubble here only, and does not affect any other connected site. The shared configuration below still has to be in place for the widget to connect.', 'ajforms' ); ?></div>
 				</div>
 
 				<div class="ajforms-settings-grid">
@@ -28914,11 +28918,14 @@ class AJForms_Admin {
 					<div class="ajforms-settings-help"><?php esc_html_e( 'Placeholder: {name}. The full message transcript is appended automatically below this text.', 'ajforms' ); ?></div>
 				</div>
 
-				<?php if ( ! $read_only ) : ?>
-					<p style="margin-top:20px;">
-						<button type="submit" class="button button-primary"><?php esc_html_e( 'Save Settings', 'ajforms' ); ?></button>
-					</p>
-				<?php endif; ?>
+				<p style="margin-top:20px;">
+					<button type="submit" class="button button-primary">
+						<?php echo $read_only ? esc_html__( 'Save Widget Setting', 'ajforms' ) : esc_html__( 'Save Settings', 'ajforms' ); ?>
+					</button>
+					<?php if ( $read_only ) : ?>
+						<span class="ajforms-settings-help" style="margin-left:8px;"><?php esc_html_e( 'Only the "show the chat widget on this site" checkbox above is saved from here; the shared fields are managed on the master.', 'ajforms' ); ?></span>
+					<?php endif; ?>
+				</p>
 			</form>
 		</div>
 		<?php
